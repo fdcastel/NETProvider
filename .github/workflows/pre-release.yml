@@ -1,0 +1,49 @@
+name: Pre-release
+
+on:
+  push:
+    branches: [pre-release]
+
+env:
+  CONFIGURATION: Release
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  build-and-publish:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: .NET 10.0
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: NuGet Cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', '**/Versions.props') }}
+          restore-keys: nuget-
+
+      - name: Build
+        run: |
+          try {
+            $n = "${{ github.run_number }}"
+            dotnet build src\NETProvider.slnx -c ${{ env.CONFIGURATION }} -p:ContinuousIntegrationBuild=true -p:ProviderVersion=11.0.0-pre.$n -p:EFCoreProviderVersion=13.0.0-pre.$n -p:EF6ProviderVersion=10.1.0-pre.$n -v m
+            exit $LASTEXITCODE
+          }
+          catch {
+            echo $_
+            exit 1
+          }
+        shell: powershell
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget push "src\**\bin\${{ env.CONFIGURATION }}\*.nupkg" --source "https://nuget.pkg.github.com/fdcastel/index.json" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+        shell: powershell
